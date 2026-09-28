@@ -1,14 +1,23 @@
 import { readFile } from "node:fs/promises";
-import { test, expect, captureScreenshot, getMapTileUrls } from "./fixtures";
+import {
+    test,
+    expect,
+    captureScreenshot,
+    getMapTileUrls,
+    mapCanvasLuminance,
+} from "./fixtures";
 import type { Page } from "@playwright/test";
 
 /**
- * Repeatable README hero capture.
+ * Repeatable README hero captures.
  *
  * Seeds tests/data/big-route.geojson (a single Terra Draw-native LineString)
  * into the app's localStorage restore path, frames the route, waits for real
- * map tiles, regenerates documentation/screenshots/demo.png and asserts
- * the data really loaded.
+ * map tiles and asserts the data really loaded. It then regenerates both
+ * committed companions: documentation/screenshots/demo-light.png from the
+ * light basemap, and documentation/screenshots/demo-dark.png after emulating
+ * the dark colour scheme, which swaps the basemap live while preserving the
+ * seeded route layer.
  */
 
 test.setTimeout(120_000);
@@ -19,7 +28,8 @@ test.setTimeout(120_000);
 test.use({ contextOptions: { reducedMotion: "reduce" } });
 
 const DATA_PATH = "tests/data/big-route.geojson";
-const SCREENSHOT_PATH = "documentation/screenshots/demo.png";
+const LIGHT_SCREENSHOT_PATH = "documentation/screenshots/demo-light.png";
+const DARK_SCREENSHOT_PATH = "documentation/screenshots/demo-dark.png";
 const ROUTE_CENTER = { longitude: -57.646, latitude: 47.2345 };
 const GEOLOCATION_ZOOM = 14;
 const KEYBOARD_ZOOM_OUT_STEPS = 8;
@@ -58,7 +68,7 @@ function badgeValue(page: Page, label: string) {
         .locator("xpath=following-sibling::*[1]");
 }
 
-test("regenerates the README hero from the big route data", async ({
+test("regenerates the README light and dark demo captures from the big route data", async ({
     page,
     context,
 }, testInfo) => {
@@ -154,6 +164,30 @@ test("regenerates the README hero from the big route data", async ({
     await infoTab.click();
     await expect(infoTab).toHaveCSS("color", "rgb(0, 138, 91)");
 
-    const screenshot = await captureScreenshot(page, SCREENSHOT_PATH);
-    await testInfo.attach("demo", { body: screenshot, contentType: "image/png" });
+    const lightScreenshot = await captureScreenshot(page, LIGHT_SCREENSHOT_PATH);
+    await testInfo.attach("demo-light", {
+        body: lightScreenshot,
+        contentType: "image/png",
+    });
+
+    // Emulating the dark scheme fires the app's matchMedia change listener,
+    // which swaps the basemap to black.json with { transformStyle:
+    // preserveTerraDrawLayers }, keeping the seeded route layer on top.
+    await page.emulateMedia({ colorScheme: "dark" });
+
+    // Gate on the dark basemap actually painting, mirroring the draw-after-swap
+    // test in dark-mode.spec.ts: a style request alone would not prove the
+    // swapped style had rendered before the capture.
+    await expect
+        .poll(() => mapCanvasLuminance(page), {
+            timeout: 20_000,
+            message: "expected the dark basemap to paint before the demo-dark capture",
+        })
+        .toBeLessThan(0.2);
+
+    const darkScreenshot = await captureScreenshot(page, DARK_SCREENSHOT_PATH);
+    await testInfo.attach("demo-dark", {
+        body: darkScreenshot,
+        contentType: "image/png",
+    });
 });

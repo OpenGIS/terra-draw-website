@@ -1,6 +1,6 @@
 import { test, expect, captureScreenshot, waitForMapTilesReady } from "./fixtures";
 
-const HOME_SCREENSHOT = "documentation/screenshots/home.png";
+const HOME_SCREENSHOT = "documentation/screenshots/home-light.png";
 const API_SCREENSHOT = "documentation/screenshots/api-docs.png";
 
 test("home screen renders the map and default side panel", async ({ page }, testInfo) => {
@@ -28,8 +28,9 @@ test("home screen renders the map and default side panel", async ({ page }, test
 
     // Rendering readiness: style.load does not prove tiles were fetched or
     // painted (captures used to be blank white maps). The shared gate waits for
-    // finished tile requests plus an animation-frame settle, and fails loudly
-    // rather than ever committing a blank asset.
+    // finished tile requests and proves the live canvas painted;
+    // captureScreenshot additionally validates the captured bytes and refuses
+    // to write a blank asset.
     await waitForMapTilesReady(page);
 
     const screenshot = await captureScreenshot(page, HOME_SCREENSHOT);

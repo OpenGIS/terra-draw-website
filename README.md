@@ -1,14 +1,21 @@
 ---
-last_commit: "1cf6c4ea4e1640b741e7788885fe9aa446ce298d"
+last_commit: "cf663f7038c3976a33983ff7502a297e35bab2d3"
 ---
 
 # Terra Draw Website
 
 The official [Terra Draw](https://www.github.com/JamesLMilner/terra-draw) website repository, live at [terradraw.io](https://terradraw.io). A static Preact + Vite site that doubles as an interactive demo of the library.
 
-![The Terra Draw website showing a single route line loaded from GeoJSON spanning Nova Scotia and Newfoundland](documentation/screenshots/demo.png)
+## Automatic light and dark
 
-*The live demo loaded with a real multi-day route: one GeoJSON LineString spanning Atlantic Canada, listed in the Info panel.*
+The UI and map basemap follow the browser/OS light/dark preference automatically, with no toggle.
+
+|          | Light | Dark |
+| -------- | ----- | ---- |
+| **Home** | ![Home screen in light mode: the map demo with the default Info tab and no features drawn](documentation/screenshots/home-light.png) | ![Home screen in dark mode: the same default map demo on the dark basemap](documentation/screenshots/home-dark.png) |
+| **Demo** | ![Demo in light mode: a route line loaded from GeoJSON spanning Nova Scotia and Newfoundland, listed in the Info panel](documentation/screenshots/demo-light.png) | ![Demo in dark mode: the same route line on the dark basemap](documentation/screenshots/demo-dark.png) |
+
+*The demo row shows the app loaded with a real multi-day route: one GeoJSON LineString spanning Atlantic Canada, listed in the Info panel.*
 
 ## Requirements
 
