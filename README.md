@@ -1,10 +1,14 @@
 ---
-last_commit: "42e22802512abcbb561e83baaada058fc1d9aab1"
+last_commit: "1cf6c4ea4e1640b741e7788885fe9aa446ce298d"
 ---
 
 # Terra Draw Website
 
 The official [Terra Draw](https://www.github.com/JamesLMilner/terra-draw) website repository, live at [terradraw.io](https://terradraw.io). A static Preact + Vite site that doubles as an interactive demo of the library.
+
+![The Terra Draw website showing a single route line loaded from GeoJSON spanning Nova Scotia and Newfoundland](documentation/screenshots/demo.png)
+
+*The live demo loaded with a real multi-day route: one GeoJSON LineString spanning Atlantic Canada, listed in the Info panel.*
 
 ## Requirements
 
@@ -43,7 +47,7 @@ See [`documentation/5.testing.md`](documentation/5.testing.md) for the full test
 | `npm run typecheck` | Type-check with `tsc --noEmit`                               |
 | `npm run build`     | Build the static site into `docs/` and write `docs/CNAME`    |
 | `npm run lint`      | Lint `src/` with ESLint                                      |
-| `npm test`          | Run the Playwright smoke test (builds and previews the site) |
+| `npm test`          | Run the Playwright test suite (builds and previews the site) |
 
 ## Further Reading
 
