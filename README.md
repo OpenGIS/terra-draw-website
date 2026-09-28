@@ -1,23 +1,54 @@
+---
+last_commit: "42e22802512abcbb561e83baaada058fc1d9aab1"
+---
+
 # Terra Draw Website
 
-The official [Terra Draw](https://www.github.com/JamesLMilner/terra-draw) website repository.
+The official [Terra Draw](https://www.github.com/JamesLMilner/terra-draw) website repository, live at [terradraw.io](https://terradraw.io). A static Preact + Vite site that doubles as an interactive demo of the library.
 
-# Running Locally
+## Requirements
 
-Versions we use:
-
-- Node 24
+- Node.js 24 (CI pins `24.18.0`)
 - npm 11
 
-You can then create a watching build that allows you to test out both changes in the example but also the Terra Draw source itself, like so:
+## Installation
 
-`npm run dev`
+```bash
+npm ci
+```
 
-This will start a hot reloading development server on port 8080 that you can explore via [https://localhost:8080](https://localhost:8080).
+## Running Locally
 
-HTTPS is required for the geolocation button to work. You may see some warnings when developing locally in your browser but these can be skipped. If you wish to develop locally over http without the warnings you can run `npm run dev:http` instead. Please be aware using the geolocate button will not work in this instance.
+```bash
+npm run dev
+```
 
+The dev server runs at [http://localhost:5173](http://localhost:5173) over HTTP. Browsers treat `localhost` as a secure context, so the geolocation button works locally.
 
-# License
+## Testing
+
+For tests, install the Playwright browser first:
+
+```bash
+npx playwright install --with-deps chromium
+```
+
+See [`documentation/5.testing.md`](documentation/5.testing.md) for the full testing guide.
+
+## Scripts
+
+| Command             | Description                                                  |
+| ------------------- | ------------------------------------------------------------ |
+| `npm run dev`       | Start the Vite dev server at `http://localhost:5173`         |
+| `npm run typecheck` | Type-check with `tsc --noEmit`                               |
+| `npm run build`     | Build the static site into `docs/` and write `docs/CNAME`    |
+| `npm run lint`      | Lint `src/` with ESLint                                      |
+| `npm test`          | Run the Playwright smoke test (builds and previews the site) |
+
+## Further Reading
+
+- [Documentation index](documentation/README.md) — getting started, architecture, map internals, export, testing and deployment.
+
+## License
 
 [MIT Licensed](./LICENSE)
