@@ -1,21 +1,13 @@
----
-last_commit: "cf663f7038c3976a33983ff7502a297e35bab2d3"
----
-
 # Terra Draw Website
 
 The official [Terra Draw](https://www.github.com/JamesLMilner/terra-draw) website repository, live at [terradraw.io](https://terradraw.io). A static Preact + Vite site that doubles as an interactive demo of the library.
 
-## Automatic light and dark
+| Light                                                           | Dark                                                          |
+| --------------------------------------------------------------- | ------------------------------------------------------------- |
+| ![Demo in light mode](documentation/screenshots/demo-light.png) | ![Demo in dark mode](documentation/screenshots/demo-dark.png) |
 
-The UI and map basemap follow the browser/OS light/dark preference automatically, with no toggle.
-
-|          | Light | Dark |
-| -------- | ----- | ---- |
-| **Home** | ![Home screen in light mode: the map demo with the default Info tab and no features drawn](documentation/screenshots/home-light.png) | ![Home screen in dark mode: the same default map demo on the dark basemap](documentation/screenshots/home-dark.png) |
-| **Demo** | ![Demo in light mode: a route line loaded from GeoJSON spanning Nova Scotia and Newfoundland, listed in the Info panel](documentation/screenshots/demo-light.png) | ![Demo in dark mode: the same route line on the dark basemap](documentation/screenshots/demo-dark.png) |
-
-*The demo row shows the app loaded with a real multi-day route: one GeoJSON LineString spanning Atlantic Canada, listed in the Info panel.*
+> [!TIP]
+> The UI and map basemap follow the browser/OS light/dark preference automatically.
 
 ## Requirements
 
@@ -56,9 +48,9 @@ See [`documentation/5.testing.md`](documentation/5.testing.md) for the full test
 | `npm run lint`      | Lint `src/` with ESLint                                      |
 | `npm test`          | Run the Playwright test suite (builds and previews the site) |
 
-## Further Reading
+## Docs
 
-- [Documentation index](documentation/README.md) — getting started, architecture, map internals, export, testing and deployment.
+- [Start **here**](documentation/README.md).
 
 ## License
 
