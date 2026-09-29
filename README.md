@@ -11,7 +11,7 @@ The official [Terra Draw](https://www.github.com/JamesLMilner/terra-draw) websit
 
 ## Requirements
 
-- Node.js 24 (CI pins `24.18.0`)
+- Node.js 24 (CI and deploy both pin `24.18.0`)
 - npm 11
 
 ## Installation
@@ -44,7 +44,7 @@ See [`documentation/5.testing.md`](documentation/5.testing.md) for the full test
 | ------------------- | ------------------------------------------------------------ |
 | `npm run dev`       | Start the Vite dev server at `http://localhost:5173`         |
 | `npm run typecheck` | Type-check with `tsc --noEmit`                               |
-| `npm run build`     | Build the static site into `docs/` and write `docs/CNAME`    |
+| `npm run build`     | Build the static site into `docs/`                           |
 | `npm run lint`      | Lint `src/` with ESLint                                      |
 | `npm test`          | Run the Playwright test suite (builds and previews the site) |
 

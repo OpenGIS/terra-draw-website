@@ -1,36 +1,25 @@
 ---
-git_hash: "cf663f7038c3976a33983ff7502a297e35bab2d3"
+git_hash: "f9987e09d0fed9b051e1cf713d3e12ca38f4f86d"
 modified: "2026-09-28"
 ---
 
 # Terra Draw Website — Developer Documentation
 
-Developer-focused documentation for the official [Terra Draw](https://github.com/JamesLMilner/terra-draw) website ([terradraw.io](https://terradraw.io)): a static Preact site that doubles as a live, interactive demo of the Terra Draw library.
+Developer docs for the official [Terra Draw](https://github.com/JamesLMilner/terra-draw) website ([terradraw.io](https://terradraw.io)): a static Preact site that doubles as a live demo of the library. They deliberately do not cover the Terra Draw API itself — the API tab iframes the TypeDoc site generated in the [terra-draw repository](https://jameslmilner.github.io/terra-draw/modules.html).
 
 ## Reading Order
 
-1. [Getting started](1.start.md) — prerequisites, install, scripts, dev server, tests and a tour of the top-level layout.
-2. [Architecture](2.architecture.md) — stack and dependencies, rendering pipeline, routing, conventions, styling and automatic theming, TypeScript configuration and known tech debt.
-3. [Map and drawing](3.map-and-drawing.md) — MapLibre setup, Terra Draw modes and validation, the drawing-to-state data flow, persistence and the toolbar.
-4. [Export and measurement](4.export-and-measurement.md) — Info tab counts and measurements, GeoJSON display/copy/download and FlatGeobuf export.
-5. [Testing](5.testing.md) — the Playwright end-to-end suite (including light/dark theming coverage and the repeatable README light/dark captures), shared fixtures, configuration, CI wiring and debugging.
-6. [Deployment](6.deployment.md) — build output, CI jobs, GitHub Pages deployment, custom domain and runtime CDN dependencies.
+1. [Getting started](1.start.md) — install, scripts, dev server and repo layout.
+2. [Architecture](2.architecture.md) — stack, rendering pipeline, routing, styling and tech debt.
+3. [Map and drawing](3.map-and-drawing.md) — MapLibre setup, Terra Draw modes, data flow and persistence.
+4. [Export and measurement](4.export-and-measurement.md) — Info tab counts and measurements, GeoJSON and FlatGeobuf export.
+5. [Testing](5.testing.md) — the Playwright end-to-end suite, fixtures, config and CI wiring.
+6. [Deployment](6.deployment.md) — build output, CI jobs, GitHub Pages and runtime CDN dependencies.
 
-## Quick Links
+## Layout
 
-- [Root README](../README.md)
-- [Source: `src/`](../src/)
-- [Tests: `tests/e2e/`](../tests/e2e/) and [`tests/data/`](../tests/data/)
-- [CI/CD workflows: `.github/workflows/`](../.github/workflows/)
-
-## What This Documentation Covers
-
-- How the site is assembled and rendered, and where the boundaries between components, routes and utils sit.
-- How the interactive demo wires MapLibre and Terra Draw together, including persistence and export.
-- How styling and automatic light/dark theming work across the CSS palette and the map basemap.
-- How the project is tested, built and deployed — `npm test` exercises the production bundle end to end, and CI then deploys it.
-
-It deliberately does **not** document the Terra Draw library API itself — the site's API tab embeds the external TypeDoc site generated in the [terra-draw repository](https://jameslmilner.github.io/terra-draw/modules.html).
+- [`README.md`](../README.md) — project overview
+- [`src/`](../src/) · [`tests/e2e/`](../tests/e2e/) · [`tests/data/`](../tests/data/) · [`.github/workflows/`](../.github/workflows/)
 
 > [!WARNING]
-> `docs/` at the repo root is the **Vite build output** (`vite.config.ts` sets `build.outDir: "docs"`), is gitignored and is wiped on every build. This documentation lives in `documentation/` — never edit anything under `docs/` by hand.
+> `docs/` at the repo root is **Vite build output** ([`vite.config.ts:7`](../vite.config.ts) sets `build.outDir: "docs"`), gitignored and wiped on every build. Developer documentation lives in `documentation/` — never edit `docs/` by hand.
