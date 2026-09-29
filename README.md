@@ -7,7 +7,7 @@ The official [Terra Draw](https://www.github.com/JamesLMilner/terra-draw) websit
 | ![Demo in light mode](documentation/screenshots/demo-light.png) | ![Demo in dark mode](documentation/screenshots/demo-dark.png) |
 
 > [!TIP]
-> The UI and map basemap follow the browser/OS light/dark preference automatically.
+> The UI and basemap follow the browser/OS light/dark preference automatically.
 
 ## Requirements
 
@@ -50,7 +50,7 @@ See [`documentation/5.testing.md`](documentation/5.testing.md) for the full test
 
 ## Docs
 
-- [Start **here**](documentation/README.md).
+**[Start here](documentation/README.md)**
 
 ## License
 
