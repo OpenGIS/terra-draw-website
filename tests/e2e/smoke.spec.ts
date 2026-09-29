@@ -1,9 +1,6 @@
-import { test, expect, captureScreenshot, waitForMapTilesReady } from "./fixtures";
+import { test, expect, waitForMapTilesReady } from "./fixtures";
 
-const HOME_SCREENSHOT = "documentation/screenshots/home-light.png";
-const API_SCREENSHOT = "documentation/screenshots/api-docs.png";
-
-test("home screen renders the map and default side panel", async ({ page }, testInfo) => {
+test("home screen renders the map and default side panel", async ({ page }) => {
     await page.goto("/");
 
     await expect(page).toHaveTitle(/Terra Draw/i);
@@ -28,16 +25,11 @@ test("home screen renders the map and default side panel", async ({ page }, test
 
     // Rendering readiness: style.load does not prove tiles were fetched or
     // painted (captures used to be blank white maps). The shared gate waits for
-    // finished tile requests and proves the live canvas painted;
-    // captureScreenshot additionally validates the captured bytes and refuses
-    // to write a blank asset.
+    // finished tile requests and proves the live canvas painted.
     await waitForMapTilesReady(page);
-
-    const screenshot = await captureScreenshot(page, HOME_SCREENSHOT);
-    await testInfo.attach("smoke-home", { body: screenshot, contentType: "image/png" });
 });
 
-test("API docs screen embeds the TypeDoc site", async ({ page }, testInfo) => {
+test("API docs screen embeds the TypeDoc site", async ({ page }) => {
     // The router uses hash history, so the API route URL is /#/api/ — a plain
     // /api/ pathname renders the home screen (confirmed empirically).
     await page.goto("/#/api/");
@@ -49,8 +41,4 @@ test("API docs screen embeds the TypeDoc site", async ({ page }, testInfo) => {
         "src",
         "https://jameslmilner.github.io/terra-draw/modules.html",
     );
-
-    // No map on this screen: the shared capture gate returns immediately.
-    const screenshot = await captureScreenshot(page, API_SCREENSHOT);
-    await testInfo.attach("smoke-api", { body: screenshot, contentType: "image/png" });
 });

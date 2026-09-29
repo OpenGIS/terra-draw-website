@@ -50,6 +50,16 @@
   --color-border-info: light-dark(#dbe7f5, #2c4a63);
   --color-border-blue-soft: light-dark(#bfd7f2, #2c4a63);
 
+  /* map-control surfaces: map-overlay chrome is keyed to the basemap it sits
+     on, not the page background. The light values mirror the page-chrome
+     tokens above, so light mode is unchanged; the dark values are lifted
+     slate so the controls stay visible over Protomaps' near-black basemap. */
+  --color-map-control-surface: light-dark(#ffffff, #343a42);
+  --color-map-control-surface-translucent: light-dark(#ffffffbd, #2b343bbd);
+  --color-map-control-surface-disabled: light-dark(#f5f7f9, #1d2226);
+  --color-map-control-border: light-dark(#d4dde6, #61676f);
+  --color-map-control-border-soft: light-dark(#dfe6ec, #61676f);
+
   /* text variants */
   --color-tab-text: light-dark(#465564, #c6d0da);
   --color-collapse-text: light-dark(#3d4b59, #c6d0da);

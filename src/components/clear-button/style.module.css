@@ -3,8 +3,8 @@
   min-height: 38px;
   font-family: "Funnel Display", sans-serif;
   letter-spacing: 0.01em;
-  background: var(--color-surface);
-  border: solid 1px var(--color-border);
+  background: var(--color-map-control-surface);
+  border: solid 1px var(--color-map-control-border);
   cursor: pointer !important;
   border-radius: 10px;
   font-weight: 700;

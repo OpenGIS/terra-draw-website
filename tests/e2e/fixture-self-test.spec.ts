@@ -1,5 +1,11 @@
 import { existsSync, rmSync } from "node:fs";
-import { test, expect, captureScreenshot } from "./fixtures";
+import {
+    test,
+    expect,
+    captureScreenshot,
+    mapCanvasLuminance,
+    waitForMapTilesReady,
+} from "./fixtures";
 
 /**
  * Meta-test: proves the auto-applied console-error fixture really fails a test
@@ -70,6 +76,81 @@ test("captureScreenshot refuses to write a blank capture", async ({ page }) => {
 });
 
 /**
+ * Meta-test: proves `captureScreenshot` also refuses a *partially* composited
+ * capture — one where the map region is a single flat colour on the left while
+ * the right is fully painted, so the band colour count alone still passes. This
+ * is the exact defect observed as `home-medium-dark-portrait.png` (left half
+ * `#2b2b2b`, 1 distinct colour).
+ *
+ * The partial fixture is manufactured from the proven-painted canvas (element
+ * screenshots are unaffected by the `page.screenshot` stub) rather than a real
+ * capture, which would be flaky for the very readback race under test. Nothing
+ * may be written until the pixels validate.
+ */
+test("captureScreenshot refuses to write a partially composited capture", async ({
+    page,
+}) => {
+    const target = ".opencode/tmp/capture-partial-guard.png";
+
+    await page.goto("/");
+    await expect(page.locator("#select")).toBeVisible();
+    await waitForMapTilesReady(page);
+
+    // Repaint the live canvas into a viewport-sized PNG, then replace the left
+    // half of its overlay-free band with one flat colour. The right half stays
+    // fully painted, so the capture passes the band check and only the
+    // canvas cross-check can reject it.
+    const canvasBuffer = await page.locator(".maplibregl-canvas").screenshot();
+    const canvasDataUrl = `data:image/png;base64,${canvasBuffer.toString("base64")}`;
+
+    const partialDataUrl = await page.evaluate(async (url) => {
+        const mapElement = document.querySelector(".maplibregl-canvas");
+        if (!mapElement) {
+            throw new Error("map canvas missing while building the partial fixture");
+        }
+        const rect = mapElement.getBoundingClientRect();
+
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+
+        const canvas = document.createElement("canvas");
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const context = canvas.getContext("2d");
+        if (!context) {
+            throw new Error("2d context unavailable while building the partial fixture");
+        }
+        context.drawImage(image, rect.x, rect.y, rect.width, rect.height);
+
+        context.fillStyle = "#2b2b2b";
+        context.fillRect(rect.x + 8, rect.y + 120, (rect.width - 16) / 2, rect.height - 160);
+
+        return canvas.toDataURL("image/png");
+    }, canvasDataUrl);
+    const partialBuffer = Buffer.from(partialDataUrl.split(",")[1], "base64");
+
+    const originalScreenshot = page.screenshot.bind(page);
+    page.screenshot = (() => Promise.resolve(partialBuffer)) as typeof page.screenshot;
+
+    let fileWrittenAfterFailure = false;
+    try {
+        await expect(captureScreenshot(page, target)).rejects.toThrow(
+            /Refusing to write a blank screenshot/,
+        );
+        fileWrittenAfterFailure = existsSync(target);
+    } finally {
+        page.screenshot = originalScreenshot;
+        rmSync(target, { force: true });
+    }
+
+    expect(
+        fileWrittenAfterFailure,
+        "partial capture must never reach the disk",
+    ).toBe(false);
+});
+
+/**
  * Meta-test: proves the storage-isolation fixture clears app-owned keys on
  * every navigation (and therefore before app scripts run).
  */
@@ -90,4 +171,70 @@ test("storage isolation fixture clears app-owned localStorage keys", async ({ pa
     }));
 
     expect(stored).toEqual({ terraDraw: null, tab: null });
+});
+
+/**
+ * Meta-test: proves `mapCanvasLuminance` measures the basemap only. The drawing
+ * toolbar and MapLibre's attribution paint above the canvas, so an element
+ * capture of the canvas would otherwise include them — bright button tokens
+ * were measured tripping the dark gate at 0.2014 while the basemap was fully
+ * dark. A large bright overlay injected over the map must not move the value
+ * across the dark ceiling.
+ */
+test("mapCanvasLuminance ignores DOM overlays painted over the canvas", async ({
+    page,
+}) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.goto("/");
+    await expect(page.locator("#select")).toBeVisible();
+    await waitForMapTilesReady(page);
+
+    // Average a few samples on each side so a single transient capture cannot
+    // decide the comparison.
+    const sample = async () => {
+        const values: number[] = [];
+        for (let i = 0; i < 3; i += 1) {
+            values.push(await mapCanvasLuminance(page));
+            await page.waitForTimeout(150);
+        }
+        const finite = values.filter(Number.isFinite);
+        expect(
+            finite.length,
+            "mapCanvasLuminance must return at least one finite sample",
+        ).toBeGreaterThan(0);
+        return finite.reduce((sum, value) => sum + value, 0) / finite.length;
+    };
+
+    const before = await sample();
+
+    await page.evaluate(() => {
+        const map = document.querySelector("#maplibre-map");
+        if (!map) {
+            throw new Error("map container missing while injecting the overlay");
+        }
+        const overlay = document.createElement("div");
+        overlay.id = "luminance-overlay-probe";
+        overlay.style.position = "absolute";
+        overlay.style.left = "200px";
+        overlay.style.top = "300px";
+        overlay.style.width = "300px";
+        overlay.style.height = "80px";
+        overlay.style.background = "#ffffff";
+        overlay.style.zIndex = "9999";
+        map.appendChild(overlay);
+    });
+
+    const after = await sample();
+
+    await page.evaluate(() =>
+        document.querySelector("#luminance-overlay-probe")?.remove(),
+    );
+
+    expect(
+        Math.abs(after - before),
+        `a bright overlay changed the canvas luminance (${before} -> ${after})`,
+    ).toBeLessThan(0.01);
+    expect(after, "the dark basemap must stay under the dark ceiling").toBeLessThan(
+        0.2,
+    );
 });

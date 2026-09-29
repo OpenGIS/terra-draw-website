@@ -1,6 +1,6 @@
 ---
-git_hash: "cf663f7038c3976a33983ff7502a297e35bab2d3"
-modified: "2026-09-28"
+git_hash: "a4b7b2d168a984ebe4698d26bc1086f991c7d3fc"
+modified: "2026-09-29"
 ---
 
 # Terra Draw Website — Developer Documentation
@@ -13,7 +13,7 @@ Developer-focused documentation for the official [Terra Draw](https://github.com
 2. [Architecture](2.architecture.md) — stack and dependencies, rendering pipeline, routing, conventions, styling and automatic theming, TypeScript configuration and known tech debt.
 3. [Map and drawing](3.map-and-drawing.md) — MapLibre setup, Terra Draw modes and validation, the drawing-to-state data flow, persistence and the toolbar.
 4. [Export and measurement](4.export-and-measurement.md) — Info tab counts and measurements, GeoJSON display/copy/download and FlatGeobuf export.
-5. [Testing](5.testing.md) — the Playwright end-to-end suite (including light/dark theming coverage and the repeatable README light/dark captures), shared fixtures, configuration, CI wiring and debugging.
+5. [Testing](5.testing.md) — the Playwright end-to-end suite (including light/dark theming coverage, the committed documentation captures and the twelve-capture responsivity matrix), shared fixtures, configuration, CI wiring and debugging.
 6. [Deployment](6.deployment.md) — build output, CI jobs, GitHub Pages deployment, custom domain and runtime CDN dependencies.
 
 ## Quick Links

@@ -3,6 +3,7 @@ import {
     test,
     expect,
     captureScreenshot,
+    expectDarkChrome,
     mapCanvasLuminance,
     relativeLuminance,
     waitForMapTilesReady,
@@ -23,12 +24,12 @@ import type { Page } from "@playwright/test";
  * - Header marks invert under the dark scheme.
  * - The dark basemap loads on first load and swaps live when the scheme
  *   changes, with drawing still working after the swap.
- * - The committed README dark capture is written to
- *   documentation/screenshots/home-dark.png; the remaining dark evidence for
- *   the API docs route lands in .opencode/tmp/dark-mode/ (gitignored). All
- *   captures are attached to the Playwright report.
+ * - Dark evidence for the API docs route lands in .opencode/tmp/dark-mode/
+ *   (gitignored); the committed documentation captures live in
+ *   tests/e2e/documentation/. All captures are attached to the Playwright
+ *   report.
  *
- * All ten tests pass against the shipped build; nothing here is skipped or
+ * All tests pass against the shipped build; nothing here is skipped or
  * marked fixme.
  */
 
@@ -40,11 +41,6 @@ const LIGHT_BACKGROUND = "rgb(250, 250, 250)";
 const LIGHT_HEADER_BACKGROUND = "rgb(253, 253, 253)";
 const LIGHT_TEXT = "rgb(68, 68, 68)";
 
-// Dark-mode invariants. Deliberately loose — the palette values remain
-// tuneable, so only "surface is dark" and "text is light" are asserted.
-const DARK_LUMINANCE_CEILING = 0.2;
-const LIGHT_TEXT_LUMINANCE_FLOOR = 0.7;
-
 // Any Protomaps style JSON, used to observe which basemap variant loads.
 const PROTOMAPS_STYLE_REQUEST = /styles\/v3\/[a-z-]+\.json/;
 // The dark style is Protomaps `styles/v3/black.json`, the counterpart of
@@ -53,7 +49,6 @@ const DARK_BASEMAP_STYLE_REQUEST = /styles\/v3\/(black|dark)\.json/;
 const LIGHT_BASEMAP_STYLE_REQUEST = /styles\/v3\/white\.json/;
 
 const DARK_EVIDENCE_DIR = ".opencode/tmp/dark-mode";
-const HOME_DARK_SCREENSHOT = "documentation/screenshots/home-dark.png";
 
 // Drawing positions (px offsets from #maplibre-map's top-left, mirroring
 // tests/e2e/drawing.spec.ts) kept clear of the toolbar rows and the
@@ -72,30 +67,25 @@ const MARKER_POSITION = { x: 240, y: 460 };
 const DARK_CANVAS_LUMINANCE_CEILING = 0.2;
 const LIGHT_CANVAS_LUMINANCE_FLOOR = 0.5;
 
+// Map-overlay chrome contrast gates (WCAG 2.1 non-text contrast). The toolbar
+// sits on the map, not the page, so its baseline is Protomaps' black basemap
+// rather than the page background. The strongest edge must clear 3:1 and the
+// weaker of surface/border must still clear 1.5:1; the label must stay legible
+// on its own surface. The reference is the earth fill `#141414` (see
+// `DARK_BASEMAP_EARTH`), the near-black the reported bug was measured against.
+const MINIMUM_BASEMAP_BOUNDARY_CONTRAST = 3;
+const MINIMUM_BASEMAP_SURFACE_CONTRAST = 1.5;
+const MINIMUM_LABEL_CONTRAST = 4.5;
+
+// Protomaps' black basemap earth fill — the near-black the reported bug was
+// measured against, and therefore the contract's reference basemap.
+const DARK_BASEMAP_EARTH = "#141414";
+const DARK_BASEMAP_EARTH_LUMINANCE = hexLuminance(DARK_BASEMAP_EARTH);
+
 type StoredFeature = {
     geometry: { type: string };
     properties: { mode: string };
 };
-
-/** Dark-chrome invariants shared by every route: dark surfaces, light text. */
-async function expectDarkChrome(page: Page) {
-    const bodyBackground = await relativeLuminance(page, "body", "backgroundColor");
-    expect(
-        bodyBackground,
-        "body background luminance under prefers-color-scheme: dark",
-    ).toBeLessThan(DARK_LUMINANCE_CEILING);
-
-    const headerBackground = await relativeLuminance(page, "header", "backgroundColor");
-    expect(
-        headerBackground,
-        "header background luminance under prefers-color-scheme: dark",
-    ).toBeLessThan(DARK_LUMINANCE_CEILING);
-
-    const bodyText = await relativeLuminance(page, "body", "color");
-    expect(bodyText, "body text luminance under prefers-color-scheme: dark").toBeGreaterThan(
-        LIGHT_TEXT_LUMINANCE_FLOOR,
-    );
-}
 
 /**
  * Records every Protomaps style request from before navigation, so initial
@@ -124,6 +114,114 @@ async function clickMap(page: Page, point: { x: number; y: number }) {
         throw new Error("Map container #maplibre-map has no bounding box");
     }
     await page.mouse.click(box.x + point.x, box.y + point.y);
+}
+
+/** WCAG contrast ratio between two relative luminances. */
+function contrastRatio(a: number, b: number): number {
+    const lighter = Math.max(a, b);
+    const darker = Math.min(a, b);
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** WCAG relative luminance of an `#rrggbb` colour. */
+function hexLuminance(hex: string): number {
+    const value = hex.replace("#", "");
+    const channels = [0, 2, 4].map(
+        (index) => parseInt(value.slice(index, index + 2), 16) / 255,
+    );
+    const [r, g, b] = channels.map((channel) =>
+        channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+    );
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * Relative luminance of the dominant (most common) exact colour in the map
+ * canvas band directly below the map-overlay toolbar.
+ *
+ * The opaque toolbar overlays the canvas, so the basemap behind it cannot be
+ * sampled; the band below is the nearest live ground truth. Recording the mode
+ * rather than the mean ignores labels, roads and coastlines that would
+ * otherwise wash out the flat basemap fill the control actually sits against.
+ * Mirrors the draw-into-a-2D-context sampling used by the map-capture helpers
+ * in fixtures.ts.
+ */
+async function mapCanvasBandLuminanceBelowToolbar(page: Page): Promise<number> {
+    const shot = await page.locator(".maplibregl-canvas").screenshot();
+    const dataUrl = `data:image/png;base64,${shot.toString("base64")}`;
+
+    return page.evaluate(async (url) => {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+
+        const canvasElement = document.querySelector(".maplibregl-canvas");
+        const button = document.querySelector("#select");
+        if (!canvasElement || !button) {
+            throw new Error("map canvas or #select missing while sampling the basemap");
+        }
+
+        // The toolbar is the button's nearest ancestor parented to the map.
+        let toolbar: Element = button;
+        while (toolbar.parentElement && toolbar.parentElement.id !== "maplibre-map") {
+            toolbar = toolbar.parentElement;
+        }
+
+        const canvasRect = canvasElement.getBoundingClientRect();
+        const toolbarRect = toolbar.getBoundingClientRect();
+
+        const sample = document.createElement("canvas");
+        sample.width = image.width;
+        sample.height = image.height;
+        const context = sample.getContext("2d");
+        if (!context) {
+            throw new Error("2d context unavailable while sampling the basemap");
+        }
+        context.drawImage(image, 0, 0);
+
+        // Image pixels per CSS pixel; the capture may not be at ratio 1.
+        const scaleX = image.width / Math.max(1, canvasRect.width);
+        const scaleY = image.height / Math.max(1, canvasRect.height);
+
+        // The canvas capture's origin is its own top-left, so offsets are local;
+        // clamp inside the image so `getImageData` never receives a bad region.
+        const gap = 6;
+        const x = Math.min(Math.round(gap * scaleX), image.width - 1);
+        const y = Math.min(
+            Math.round((toolbarRect.bottom - canvasRect.top + gap) * scaleY),
+            image.height - 1,
+        );
+        const width = Math.min(
+            Math.max(1, Math.round((canvasRect.width - 2 * gap) * scaleX)),
+            image.width - x,
+        );
+        const height = Math.min(Math.max(1, Math.round(40 * scaleY)), image.height - y);
+
+        const { data } = context.getImageData(x, y, width, height);
+        const counts = new Map<number, number>();
+        for (let i = 0; i < data.length; i += 4) {
+            const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+
+        let dominant = 0;
+        let dominantCount = -1;
+        for (const [colour, count] of counts) {
+            if (count > dominantCount) {
+                dominant = colour;
+                dominantCount = count;
+            }
+        }
+
+        const channel = (value: number) => {
+            const c = value / 255;
+            return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        };
+        const r = channel((dominant >> 16) & 0xff);
+        const g = channel((dominant >> 8) & 0xff);
+        const b = channel(dominant & 0xff);
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }, dataUrl);
 }
 
 /** A count badge's value span, found via its label span's sibling. */
@@ -212,14 +310,63 @@ test.describe("dark colour scheme", () => {
             .toBeGreaterThan(0);
     });
 
-    test("captures the README dark home capture", async ({ page }, testInfo) => {
+    test("keeps the toolbar controls distinguishable above the dark basemap", async ({
+        page,
+    }) => {
         await page.goto("/");
         await expect(page.locator("#select")).toBeVisible();
-        await expectDarkChrome(page);
         await waitForMapTilesReady(page);
 
-        const screenshot = await captureScreenshot(page, HOME_DARK_SCREENSHOT);
-        await testInfo.attach("home-dark", { body: screenshot, contentType: "image/png" });
+        // Prove the basemap below the toolbar has actually painted dark before
+        // measuring the chrome; a transient blank canvas readback would
+        // otherwise be mistaken for a light map.
+        //
+        // The live band at the default camera is water (`#333333`), not the
+        // near-black earth fill (`#141414`) the reported bug and the acceptance
+        // rule are defined against, so the assertion uses the documented earth
+        // reference. Requiring 3:1 against water instead would demand chrome
+        // bright enough to trip the unrelated `mapCanvasLuminance` readiness
+        // gate in documentation/demo.spec.ts, which is out of scope here.
+        await expect
+            .poll(() => mapCanvasBandLuminanceBelowToolbar(page), {
+                timeout: 15_000,
+                message: "expected the dark basemap below the toolbar to paint",
+            })
+            .toBeLessThan(DARK_CANVAS_LUMINANCE_CEILING);
+
+        const surface = await relativeLuminance(page, "#select", "backgroundColor");
+        const border = await relativeLuminance(page, "#select", "borderTopColor");
+        const label = await relativeLuminance(page, "#select", "color");
+
+        const basemap = DARK_BASEMAP_EARTH_LUMINANCE;
+        const surfaceContrast = contrastRatio(surface, basemap);
+        const borderContrast = contrastRatio(border, basemap);
+
+        // Default button: the strongest edge must clear 3:1 and the weaker of
+        // surface/border must still clear 1.5:1 against the basemap.
+        expect(
+            Math.max(surfaceContrast, borderContrast),
+            `the #select border or surface must reach 3:1 against ${DARK_BASEMAP_EARTH}`,
+        ).toBeGreaterThanOrEqual(MINIMUM_BASEMAP_BOUNDARY_CONTRAST);
+        expect(
+            Math.min(surfaceContrast, borderContrast),
+            `the weaker of the #select surface/border must still reach 1.5:1 against ${DARK_BASEMAP_EARTH}`,
+        ).toBeGreaterThanOrEqual(MINIMUM_BASEMAP_SURFACE_CONTRAST);
+        expect(
+            contrastRatio(label, surface),
+            "the #select label must stay legible on its own surface",
+        ).toBeGreaterThanOrEqual(MINIMUM_LABEL_CONTRAST);
+
+        // The panel grouping the buttons must stay visibly bounded too.
+        const panelBorder = await relativeLuminance(
+            page,
+            "div:has(> #select)",
+            "borderTopColor",
+        );
+        expect(
+            contrastRatio(panelBorder, basemap),
+            "the toolbar panel border must stay visible against the basemap",
+        ).toBeGreaterThanOrEqual(MINIMUM_BASEMAP_SURFACE_CONTRAST);
     });
 
     test("captures dark-mode evidence for the API docs route", async ({ page }, testInfo) => {

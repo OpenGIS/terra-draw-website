@@ -5,19 +5,18 @@ import {
     captureScreenshot,
     getMapTileUrls,
     mapCanvasLuminance,
-} from "./fixtures";
+} from "../fixtures";
 import type { Page } from "@playwright/test";
 
 /**
- * Repeatable README hero captures.
+ * Repeatable committed demo captures.
  *
  * Seeds tests/data/big-route.geojson (a single Terra Draw-native LineString)
  * into the app's localStorage restore path, frames the route, waits for real
  * map tiles and asserts the data really loaded. It then regenerates both
- * committed companions: documentation/screenshots/demo-light.png from the
- * light basemap, and documentation/screenshots/demo-dark.png after emulating
- * the dark colour scheme, which swaps the basemap live while preserving the
- * seeded route layer.
+ * committed companions in tests/e2e/documentation/screenshots/: demo-light.png
+ * from the light basemap, and demo-dark.png after emulating the dark colour
+ * scheme, which swaps the basemap live while preserving the seeded route layer.
  */
 
 test.setTimeout(120_000);
@@ -28,8 +27,8 @@ test.setTimeout(120_000);
 test.use({ contextOptions: { reducedMotion: "reduce" } });
 
 const DATA_PATH = "tests/data/big-route.geojson";
-const LIGHT_SCREENSHOT_PATH = "documentation/screenshots/demo-light.png";
-const DARK_SCREENSHOT_PATH = "documentation/screenshots/demo-dark.png";
+const LIGHT_SCREENSHOT_PATH = "tests/e2e/documentation/screenshots/demo-light.png";
+const DARK_SCREENSHOT_PATH = "tests/e2e/documentation/screenshots/demo-dark.png";
 const ROUTE_CENTER = { longitude: -57.646, latitude: 47.2345 };
 const GEOLOCATION_ZOOM = 14;
 const KEYBOARD_ZOOM_OUT_STEPS = 8;
@@ -68,7 +67,7 @@ function badgeValue(page: Page, label: string) {
         .locator("xpath=following-sibling::*[1]");
 }
 
-test("regenerates the README light and dark demo captures from the big route data", async ({
+test("regenerates the light and dark demo captures from the big route data", async ({
     page,
     context,
 }, testInfo) => {
