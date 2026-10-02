@@ -4,6 +4,7 @@ import {
     captureScreenshot,
     expectDarkChrome,
     waitForMapTilesReady,
+    SCREENSHOT_MIME,
 } from "../fixtures";
 
 /**
@@ -11,7 +12,7 @@ import {
  *
  * Captures the default empty home state across three device-ish sizes, both
  * orientations, and both colour schemes: 3 x 2 x 2 = 12 committed assets in
- * tests/e2e/responsivity/screenshots/. The auto-applied `cleanStorage` fixture
+ * screenshots/responsivity/. The auto-applied `cleanStorage` fixture
  * removes the persisted `terra-draw` state on every navigation, so every
  * capture shows the default empty home state.
  *
@@ -77,11 +78,11 @@ for (const scheme of SCHEMES) {
                     const name = `home-${size.name}-${scheme}-${orientation}`;
                     const screenshot = await captureScreenshot(
                         page,
-                        `tests/e2e/responsivity/screenshots/${name}.png`,
+                        `screenshots/responsivity/${name}.jpg`,
                     );
                     await testInfo.attach(name, {
                         body: screenshot,
-                        contentType: "image/png",
+                        contentType: SCREENSHOT_MIME,
                     });
                 });
             }

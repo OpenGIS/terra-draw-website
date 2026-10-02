@@ -5,6 +5,7 @@ import {
     captureScreenshot,
     getMapTileUrls,
     mapCanvasLuminance,
+    SCREENSHOT_MIME,
 } from "../fixtures";
 import type { Page } from "@playwright/test";
 
@@ -14,8 +15,8 @@ import type { Page } from "@playwright/test";
  * Seeds tests/data/big-route.geojson (a single Terra Draw-native LineString)
  * into the app's localStorage restore path, frames the route, waits for real
  * map tiles and asserts the data really loaded. It then regenerates both
- * committed companions in tests/e2e/documentation/screenshots/: demo-light.png
- * from the light basemap, and demo-dark.png after emulating the dark colour
+ * committed companions in screenshots/docs/: demo-light.jpg
+ * from the light basemap, and demo-dark.jpg after emulating the dark colour
  * scheme, which swaps the basemap live while preserving the seeded route layer.
  */
 
@@ -27,8 +28,8 @@ test.setTimeout(120_000);
 test.use({ contextOptions: { reducedMotion: "reduce" } });
 
 const DATA_PATH = "tests/data/big-route.geojson";
-const LIGHT_SCREENSHOT_PATH = "tests/e2e/documentation/screenshots/demo-light.png";
-const DARK_SCREENSHOT_PATH = "tests/e2e/documentation/screenshots/demo-dark.png";
+const LIGHT_SCREENSHOT_PATH = "screenshots/docs/demo-light.jpg";
+const DARK_SCREENSHOT_PATH = "screenshots/docs/demo-dark.jpg";
 const ROUTE_CENTER = { longitude: -57.646, latitude: 47.2345 };
 const GEOLOCATION_ZOOM = 14;
 const KEYBOARD_ZOOM_OUT_STEPS = 8;
@@ -166,7 +167,7 @@ test("regenerates the light and dark demo captures from the big route data", asy
     const lightScreenshot = await captureScreenshot(page, LIGHT_SCREENSHOT_PATH);
     await testInfo.attach("demo-light", {
         body: lightScreenshot,
-        contentType: "image/png",
+        contentType: SCREENSHOT_MIME,
     });
 
     // Emulating the dark scheme fires the app's matchMedia change listener,
@@ -187,6 +188,6 @@ test("regenerates the light and dark demo captures from the big route data", asy
     const darkScreenshot = await captureScreenshot(page, DARK_SCREENSHOT_PATH);
     await testInfo.attach("demo-dark", {
         body: darkScreenshot,
-        contentType: "image/png",
+        contentType: SCREENSHOT_MIME,
     });
 });

@@ -96,5 +96,9 @@ export function setupMaplibreMap({
     colorScheme.removeEventListener("change", handleColorSchemeChange);
   });
 
+  // Expose the instance so end-to-end tests can wait on MapLibre's `idle`
+  // event (a reliable paint signal) before capturing a screenshot.
+  window.__terraMap = map;
+
   return map;
 }

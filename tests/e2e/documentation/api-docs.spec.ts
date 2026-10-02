@@ -1,4 +1,4 @@
-import { test, expect, captureScreenshot } from "../fixtures";
+import { test, expect, captureScreenshot, SCREENSHOT_MIME } from "../fixtures";
 
 /**
  * Committed documentation capture for the API docs route.
@@ -7,10 +7,10 @@ import { test, expect, captureScreenshot } from "../fixtures";
  * /api/ pathname renders the home screen (confirmed empirically). The route
  * embeds the external TypeDoc site in a single iframe; there is no map, so the
  * shared capture gate returns immediately. The asset lands in
- * tests/e2e/documentation/screenshots/.
+ * screenshots/docs/.
  */
 
-const API_SCREENSHOT = "tests/e2e/documentation/screenshots/api-docs.png";
+const API_SCREENSHOT = "screenshots/docs/api-docs.jpg";
 
 test("captures the API docs screen", async ({ page }, testInfo) => {
     await page.goto("/#/api/");
@@ -24,5 +24,5 @@ test("captures the API docs screen", async ({ page }, testInfo) => {
     );
 
     const screenshot = await captureScreenshot(page, API_SCREENSHOT);
-    await testInfo.attach("api-docs", { body: screenshot, contentType: "image/png" });
+    await testInfo.attach("api-docs", { body: screenshot, contentType: SCREENSHOT_MIME });
 });

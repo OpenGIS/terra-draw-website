@@ -42,19 +42,19 @@ test("console-error fixture fails tests that log a console error", async ({ page
  * pixels validate.
  */
 test("captureScreenshot refuses to write a blank capture", async ({ page }) => {
-    const target = ".opencode/tmp/capture-guard.png";
+    const target = ".opencode/tmp/capture-guard.jpg";
 
     await page.goto("/");
     await expect(page.locator("#select")).toBeVisible();
 
-    // Build a valid 1x1 white PNG through the 2D canvas API (no compositor
+    // Build a valid 1x1 white JPEG through the 2D canvas API (no compositor
     // involvement), then stub the page's screenshot to return it. A real blank
     // capture would be flaky here for the very readback race under test.
     const blankDataUrl = await page.evaluate(() => {
         const canvas = document.createElement("canvas");
         canvas.width = 1;
         canvas.height = 1;
-        return canvas.toDataURL("image/png");
+        return canvas.toDataURL("image/jpeg", 0.85);
     });
     const blankBuffer = Buffer.from(blankDataUrl.split(",")[1], "base64");
 
@@ -79,7 +79,7 @@ test("captureScreenshot refuses to write a blank capture", async ({ page }) => {
  * Meta-test: proves `captureScreenshot` also refuses a *partially* composited
  * capture — one where the map region is a single flat colour on the left while
  * the right is fully painted, so the band colour count alone still passes. This
- * is the exact defect observed as `home-medium-dark-portrait.png` (left half
+ * is the exact defect observed as `home-medium-dark-portrait.jpg` (left half
  * `#2b2b2b`, 1 distinct colour).
  *
  * The partial fixture is manufactured from the proven-painted canvas (element
@@ -90,7 +90,7 @@ test("captureScreenshot refuses to write a blank capture", async ({ page }) => {
 test("captureScreenshot refuses to write a partially composited capture", async ({
     page,
 }) => {
-    const target = ".opencode/tmp/capture-partial-guard.png";
+    const target = ".opencode/tmp/capture-partial-guard.jpg";
 
     await page.goto("/");
     await expect(page.locator("#select")).toBeVisible();
@@ -126,7 +126,7 @@ test("captureScreenshot refuses to write a partially composited capture", async 
         context.fillStyle = "#2b2b2b";
         context.fillRect(rect.x + 8, rect.y + 120, (rect.width - 16) / 2, rect.height - 160);
 
-        return canvas.toDataURL("image/png");
+        return canvas.toDataURL("image/jpeg", 0.85);
     }, canvasDataUrl);
     const partialBuffer = Buffer.from(partialDataUrl.split(",")[1], "base64");
 
@@ -147,6 +147,113 @@ test("captureScreenshot refuses to write a partially composited capture", async 
     expect(
         fileWrittenAfterFailure,
         "partial capture must never reach the disk",
+    ).toBe(false);
+});
+
+/**
+ * Meta-test: proves the capture validator no longer accepts a blank map merely
+ * because real DOM overlays are painted over it. The diagnosed false pass
+ * scored colours from the drawing toolbar and attribution (and, below 900px,
+ * the toolbar wrapping into the old fixed band), so the validator now samples
+ * only unmasked map interior.
+ *
+ * The live page is fully painted, so its overlays are genuine. The synthetic
+ * capture fills the whole viewport with one flat colour and pastes the real
+ * overlay element screenshots at their live rects — exactly the overlays a
+ * false pass would have exploited. Element screenshots are unaffected by the
+ * `page.screenshot` stub. Nothing may be written until the pixels validate.
+ */
+test("captureScreenshot refuses a blank map covered by real overlays", async ({
+    page,
+}) => {
+    const target = ".opencode/tmp/capture-overlay-guard.jpg";
+
+    await page.goto("/");
+    await expect(page.locator("#select")).toBeVisible();
+    await waitForMapTilesReady(page);
+
+    // The same overlay set the capture validator masks out of the map.
+    const overlaySelector =
+        "#maplibre-map > :not(.maplibregl-canvas-container), #maplibre-map .maplibregl-ctrl";
+
+    const overlayRects = await page.evaluate(
+        (selector) =>
+            Array.from(document.querySelectorAll(selector)).map((element) => {
+                const rect = element.getBoundingClientRect();
+                return {
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                };
+            }),
+        overlaySelector,
+    );
+
+    const overlayLocators = await page.locator(overlaySelector).all();
+    const overlays: Array<{
+        rect: { left: number; top: number; width: number; height: number };
+        dataUrl: string;
+    }> = [];
+    for (let index = 0; index < overlayLocators.length; index += 1) {
+        const rect = overlayRects[index];
+        if (!rect || rect.width <= 0 || rect.height <= 0) {
+            continue;
+        }
+        const shot = await overlayLocators[index].screenshot();
+        overlays.push({
+            rect,
+            dataUrl: `data:image/png;base64,${shot.toString("base64")}`,
+        });
+    }
+    expect(
+        overlays.length,
+        "the live map must expose at least one overlay",
+    ).toBeGreaterThan(0);
+
+    // A flat map with the real overlay pixels composited on top. Drawing at the
+    // live CSS rects maps the element screenshots (which may be at
+    // devicePixelRatio) back onto viewport coordinates.
+    const compositeDataUrl = await page.evaluate(
+        async ({ overlayImages, colour }) => {
+            const canvas = document.createElement("canvas");
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            const context = canvas.getContext("2d");
+            if (!context) {
+                throw new Error("2d context unavailable while building the overlay fixture");
+            }
+            context.fillStyle = colour;
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            for (const { rect, dataUrl } of overlayImages) {
+                const image = new Image();
+                image.src = dataUrl;
+                await image.decode();
+                context.drawImage(image, rect.left, rect.top, rect.width, rect.height);
+            }
+            return canvas.toDataURL("image/jpeg", 0.85);
+        },
+        { overlayImages: overlays, colour: "#2b2b2b" },
+    );
+    const compositeBuffer = Buffer.from(compositeDataUrl.split(",")[1], "base64");
+
+    const originalScreenshot = page.screenshot.bind(page);
+    page.screenshot = (() => Promise.resolve(compositeBuffer)) as typeof page.screenshot;
+
+    let fileWrittenAfterFailure = false;
+    try {
+        await expect(captureScreenshot(page, target)).rejects.toThrow(
+            /Refusing to write a blank screenshot/,
+        );
+        fileWrittenAfterFailure = existsSync(target);
+    } finally {
+        page.screenshot = originalScreenshot;
+        rmSync(target, { force: true });
+    }
+
+    expect(
+        fileWrittenAfterFailure,
+        "overlay-covered blank capture must never reach the disk",
     ).toBe(false);
 });
 

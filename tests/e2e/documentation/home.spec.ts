@@ -4,6 +4,7 @@ import {
     captureScreenshot,
     expectDarkChrome,
     waitForMapTilesReady,
+    SCREENSHOT_MIME,
 } from "../fixtures";
 
 /**
@@ -13,11 +14,11 @@ import {
  * state on every navigation, so both captures show the default empty home
  * state. Light is the default viewport and colour scheme; the dark capture
  * emulates `prefers-color-scheme: dark`, which the app follows with no UI
- * toggle. Assets land in tests/e2e/documentation/screenshots/.
+ * toggle. Assets land in screenshots/docs/.
  */
 
-const LIGHT_SCREENSHOT = "tests/e2e/documentation/screenshots/home-light.png";
-const DARK_SCREENSHOT = "tests/e2e/documentation/screenshots/home-dark.png";
+const LIGHT_SCREENSHOT = "screenshots/docs/home-light.jpg";
+const DARK_SCREENSHOT = "screenshots/docs/home-dark.jpg";
 
 test.describe("home documentation capture (light)", () => {
     test.use({ colorScheme: "light" });
@@ -50,7 +51,7 @@ test.describe("home documentation capture (light)", () => {
         await waitForMapTilesReady(page);
 
         const screenshot = await captureScreenshot(page, LIGHT_SCREENSHOT);
-        await testInfo.attach("home-light", { body: screenshot, contentType: "image/png" });
+        await testInfo.attach("home-light", { body: screenshot, contentType: SCREENSHOT_MIME });
     });
 });
 
@@ -64,6 +65,6 @@ test.describe("home documentation capture (dark)", () => {
         await waitForMapTilesReady(page);
 
         const screenshot = await captureScreenshot(page, DARK_SCREENSHOT);
-        await testInfo.attach("home-dark", { body: screenshot, contentType: "image/png" });
+        await testInfo.attach("home-dark", { body: screenshot, contentType: SCREENSHOT_MIME });
     });
 });

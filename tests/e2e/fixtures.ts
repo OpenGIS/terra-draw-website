@@ -349,105 +349,87 @@ export async function mapCanvasLuminance(page: Page): Promise<number> {
 }
 
 /**
- * Number of distinct quantised colours in a downscaled capture of the map
- * canvas. A blank or uniform canvas (white, or background-only) yields 1-3;
- * a painted map with tiles and labels yields hundreds.
- */
-async function mapCanvasColourCount(page: Page): Promise<number> {
-    try {
-        const shot = await page.locator(".maplibregl-canvas").screenshot();
-        const dataUrl = `data:image/png;base64,${shot.toString("base64")}`;
-
-        return await page.evaluate(async (url) => {
-            const image = new Image();
-            image.src = url;
-            await image.decode();
-
-            const sample = document.createElement("canvas");
-            sample.width = 160;
-            sample.height = 160;
-            const context = sample.getContext("2d");
-            if (!context) {
-                return 0;
-            }
-            context.drawImage(image, 0, 0, sample.width, sample.height);
-
-            const { data } = context.getImageData(0, 0, sample.width, sample.height);
-            const colours = new Set<number>();
-            for (let i = 0; i < data.length; i += 4) {
-                colours.add(
-                    ((data[i] >> 4) << 8) | ((data[i + 1] >> 4) << 4) | (data[i + 2] >> 4),
-                );
-            }
-            return colours.size;
-        }, dataUrl);
-    } catch {
-        // Transient capture errors must not abort the poll.
-        return 0;
-    }
-}
-
-/**
- * Hard gate for map screenshots: refuses to let a capture proceed until real
- * map tiles have been downloaded AND the canvas actually shows painted map
- * content.
+ * Hard gate for map screenshots: refuses to let a capture proceed until
+ * MapLibre itself reports the map has finished rendering.
  *
- * Why both signals:
- * - Tile bodies must exist. The default 1280x720 viewport has a 780x650 map;
- *   at zoom 3 that needs 4-6 of MapLibre's 512px tiles, so 4 proves real
- *   coverage without being brittle about edge tiles.
- * - Downloaded is not painted. MapLibre parses tiles in a worker and paints on
- *   later animation frames; probes showed 4 finished tile requests with a
- *   still-blank canvas, and a double `requestAnimationFrame` alone was not
- *   enough under parallel GPU load (a full-suite capture was blank again).
- *   Polling the canvas's own colour diversity is load-independent and gates on
- *   the pixels the screenshot will actually contain.
+ * The previous gate inferred readiness from a 160x160 colour count of a
+ * `.maplibregl-canvas` element screenshot. That element shot is a crop of the
+ * composited page, so DOM overlays (toolbar, buttons, attribution) satisfied
+ * its colour threshold before MapLibre had painted a single tile. Gating on
+ * MapLibre's own `idle` event instead is immune to what overlays show.
+ *
+ * A plain `once("idle")` can hang when the map is already idle, so this
+ * attaches the listener first, then forces a repaint (`triggerRepaint`); the
+ * `idle` that follows is necessarily one this call initiated. An in-page
+ * timeout rejects loudly rather than hanging.
  *
  * Non-map screens (e.g. the `/#/api/` TypeDoc route) return immediately.
- * A timeout throws loudly.
  *
- * Note this gate proves the live canvas painted; it cannot by itself stop a
- * later full-viewport capture from reading back blank pixels (a Chromium
- * WebGL readback race). `captureScreenshot` validates the captured bytes for
- * that reason.
+ * Note this gate proves the live canvas finished rendering; it cannot by
+ * itself stop a later full-viewport capture from reading back blank pixels (a
+ * Chromium WebGL readback race). `captureScreenshot` validates the captured
+ * bytes for that reason.
  */
 export async function waitForMapTilesReady(
     page: Page,
-    options: { minimumTiles?: number; timeout?: number } = {},
+    options: { timeout?: number } = {},
 ) {
-    const minimumTiles = options.minimumTiles ?? 4;
     const timeout = options.timeout ?? 30_000;
 
     if ((await page.locator("#maplibre-map").count()) === 0) {
         return;
     }
 
-    const tileUrls = mapTileUrlsByPage.get(page) ?? [];
+    // Shared deadline so the hook wait and the idle wait cannot stack into two
+    // full timeouts.
+    const deadline = Date.now() + timeout;
+
     try {
-        await expect
-            .poll(() => tileUrls.length, { timeout })
-            .toBeGreaterThanOrEqual(minimumTiles);
+        await page.waitForFunction(() => Boolean(window.__terraMap), null, {
+            timeout: Math.max(1, deadline - Date.now()),
+        });
     } catch (error) {
         throw new Error(
-            `Map tiles did not render on ${page.url()}: only ${tileUrls.length} finished tile request(s) within ${timeout}ms (minimum ${minimumTiles}). Refusing to capture a blank map.`,
+            `Timed out waiting for the MapLibre map handle on ${page.url()}: window.__terraMap was never exposed. Refusing to capture a potentially blank map.`,
             { cause: error },
         );
     }
 
-    let lastColourCount = 0;
+    const remaining = Math.max(1, deadline - Date.now());
     try {
-        await expect
-            .poll(
-                async () => {
-                    lastColourCount = await mapCanvasColourCount(page);
-                    return lastColourCount;
-                },
-                { timeout },
-            )
-            .toBeGreaterThan(10);
+        await page.evaluate(
+            (waitMs) =>
+                new Promise<void>((resolve, reject) => {
+                    const map = window.__terraMap;
+                    if (!map) {
+                        reject(new Error("window.__terraMap disappeared before the idle wait"));
+                        return;
+                    }
+
+                    const timer = setTimeout(
+                        () =>
+                            reject(
+                                new Error(
+                                    `MapLibre did not emit idle after a forced repaint within ${waitMs}ms`,
+                                ),
+                            ),
+                        waitMs,
+                    );
+
+                    // Attach before repainting so the event cannot be missed; the
+                    // forced repaint guarantees a fresh idle even when the map
+                    // was already settled.
+                    map.once("idle", () => {
+                        clearTimeout(timer);
+                        resolve();
+                    });
+                    map.triggerRepaint();
+                }),
+            remaining,
+        );
     } catch (error) {
         throw new Error(
-            `Map canvas never painted on ${page.url()}: ${tileUrls.length} finished tile request(s), canvas showed only ${lastColourCount} distinct colour(s) after ${timeout}ms. Refusing to capture a blank map.`,
+            `Timed out waiting for MapLibre to finish rendering on ${page.url()}. Refusing to capture a blank map.`,
             { cause: error },
         );
     }
@@ -462,12 +444,12 @@ export async function waitForMapTilesReady(
 }
 
 /**
- * Minimum distinct exact (8-bit) colours expected in an overlay-free band of a
- * painted map capture. Measured across the four documentation captures the
- * painted minimum is 139 (dark home) and the blank score is 1, so 32 leaves
- * a wide margin both ways. See `capturedMapColourCount` for why the check
- * uses a band and exact colours rather than the `mapCanvasColourCount`
- * quantisation.
+ * Minimum distinct exact (8-bit) colours expected in the overlay-free map
+ * interior of a painted capture. Painted captures score hundreds to
+ * thousands (e.g. 2831 light / 466 dark at 390x844), the flat interior
+ * scores 1 and the observed blank artifact 24 (JPEG ringing around overlay
+ * edges), so 32 separates painted from blank. See `capturedMapColourCount`
+ * for the masked sampling this drives.
  */
 const MINIMUM_PAINTED_COLOURS = 32;
 
@@ -493,49 +475,50 @@ const MINIMUM_CANVAS_CELL_COLOURS = 6;
 const MAXIMUM_CONTRADICTED_CELLS = 2;
 
 /**
- * Distinct exact (8-bit) colours in an overlay-free band of the map canvas,
- * read back from an already-captured PNG buffer. Returns `null` when the page
- * has no map (e.g. the `/#/api/` TypeDoc route), so validation is skipped
- * there.
+ * JPEG quality for every committed full-page capture. The literal `"jpeg"` is
+ * passed directly to Playwright; `SCREENSHOT_MIME` is exported so specs can
+ * label the matching attachments correctly.
+ */
+const SCREENSHOT_QUALITY = 85;
+export const SCREENSHOT_MIME = "image/jpeg";
+
+/**
+ * Distinct exact (8-bit) colours painted by the map, read back from the
+ * already-captured page buffer. Returns `null` when the page has no map (e.g.
+ * the `/#/api/` TypeDoc route), so validation is skipped there.
  *
- * Why a band, and why exact colours:
- * - The drawing toolbar covers the top ~105px of the map and the attribution
- *   control the bottom ~35px. Sampling the whole map container counts their
- *   antialiased pixels, so a blank map still scores 40+ quantised colours and
- *   a naive ">10 colours" check passes it. The band below the toolbar and
- *   above the attribution contains map pixels only.
+ * Why overlay-free canvas pixels, and why exact colours:
+ * - The capture is the composited page, so it includes every DOM overlay
+ *   painted above the map (the drawing toolbar, MapLibre controls). Counting
+ *   the whole map container would count their antialiased pixels, letting a
+ *   blank map score 40+ colours. Instead the live overlay bounding boxes are
+ *   rasterised into a mask — the same selector and padding
+ *   `captureCanvasLuminance` uses — and only unmasked pixels inside the
+ *   `.maplibregl-canvas` rect are counted. A blank map therefore scores its
+ *   single canvas colour whatever sits on top, including the toolbar wrapped
+ *   over the map below 900px.
  * - Quantising to 4 bits per channel compresses the white basemap until a
- *   painted dark-home band scores exactly 10 distinct colours — the boundary
- *   the live-canvas gate uses to mean "painted". Exact colours keep a wide
- *   margin: blank bands score 1, while the painted committed assets score
- *   139-960.
+ *   painted dark-home interior scores exactly 10 distinct colours — the
+ *   boundary the live-canvas gate uses to mean "painted". Exact colours keep a
+ *   wide margin: blank interiors score 1, while the painted committed assets
+ *   score roughly 165-1438.
  *
  * The buffer's pixel scale is derived from `image.width / window.innerWidth` so
- * the band stays correct if the capture pixel ratio ever changes.
+ * sampling stays correct if the capture pixel ratio ever changes.
  */
 async function capturedMapColourCount(page: Page, shot: Buffer): Promise<number | null> {
-    const dataUrl = `data:image/png;base64,${shot.toString("base64")}`;
+    const dataUrl = `data:${SCREENSHOT_MIME};base64,${shot.toString("base64")}`;
 
     return page.evaluate(async (url) => {
-        const mapElement =
-            document.querySelector(".maplibregl-canvas") ??
-            document.querySelector("#maplibre-map");
-        if (!mapElement) {
+        const canvasElement = document.querySelector(".maplibregl-canvas");
+        const mapElement = canvasElement ?? document.querySelector("#maplibre-map");
+        if (!canvasElement || !mapElement) {
             return null;
         }
 
         const image = new Image();
         image.src = url;
         await image.decode();
-
-        const rect = mapElement.getBoundingClientRect();
-        const scaleX = image.width / window.innerWidth;
-        const scaleY = image.height / window.innerHeight;
-
-        const sx = Math.max(0, Math.round((rect.x + 8) * scaleX));
-        const sy = Math.max(0, Math.round((rect.y + 120) * scaleY));
-        const sw = Math.max(1, Math.round((rect.width - 16) * scaleX));
-        const sh = Math.max(1, Math.round((rect.height - 160) * scaleY));
 
         const canvas = document.createElement("canvas");
         canvas.width = image.width;
@@ -548,9 +531,59 @@ async function capturedMapColourCount(page: Page, shot: Buffer): Promise<number 
         }
         context.drawImage(image, 0, 0);
 
-        const { data } = context.getImageData(sx, sy, sw, sh);
+        // Overlays painted above the canvas in the capture. Their live
+        // bounding boxes are rasterised into a mask so the per-pixel loop
+        // below counts basemap pixels only, whatever their size or count.
+        const overlayRects = Array.from(
+            document.querySelectorAll(
+                "#maplibre-map > :not(.maplibregl-canvas-container), #maplibre-map .maplibregl-ctrl",
+            ),
+        )
+            .map((element) => element.getBoundingClientRect())
+            .filter((rect) => rect.width > 0 && rect.height > 0);
+
+        // Image pixels per CSS pixel; the page capture is viewport-sized.
+        const scaleX = image.width / window.innerWidth;
+        const scaleY = image.height / window.innerHeight;
+
+        const mask = document.createElement("canvas");
+        mask.width = image.width;
+        mask.height = image.height;
+        const maskContext = mask.getContext("2d");
+        if (!maskContext) {
+            return 0;
+        }
+        maskContext.fillStyle = "#000";
+        const pad = 2;
+        for (const rect of overlayRects) {
+            maskContext.fillRect(
+                (rect.left - pad) * scaleX,
+                (rect.top - pad) * scaleY,
+                (rect.width + 2 * pad) * scaleX,
+                (rect.height + 2 * pad) * scaleY,
+            );
+        }
+
+        // The `.maplibregl-canvas` rect within the page capture.
+        const canvasRect = canvasElement.getBoundingClientRect();
+        const sx = Math.max(0, Math.round(canvasRect.left * scaleX));
+        const sy = Math.max(0, Math.round(canvasRect.top * scaleY));
+        const ex = Math.min(image.width, Math.round(canvasRect.right * scaleX));
+        const ey = Math.min(image.height, Math.round(canvasRect.bottom * scaleY));
+        const width = ex - sx;
+        const height = ey - sy;
+        if (width <= 0 || height <= 0) {
+            return 0;
+        }
+
+        const maskData = maskContext.getImageData(sx, sy, width, height).data;
+        const { data } = context.getImageData(sx, sy, width, height);
+
         const colours = new Set<number>();
         for (let i = 0; i < data.length; i += 4) {
+            if (maskData[i + 3] !== 0) {
+                continue;
+            }
             colours.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
         }
         return colours.size;
@@ -558,12 +591,12 @@ async function capturedMapColourCount(page: Page, shot: Buffer): Promise<number 
 }
 
 /**
- * Cross-checks an already-captured full-page PNG against a fresh capture of
+ * Cross-checks an already-captured full-page JPEG against a fresh capture of
  * the live map canvas, cell by cell, to catch a partially composited capture
  * that a single-band colour count cannot see (a half-uniform capture still
  * scores hundreds of colours from its painted half).
  *
- * Why the live canvas, not the PNG alone: a fully composited dark capture
+ * Why the live canvas, not the JPEG alone: a fully composited dark capture
  * legitimately contains large, exactly uniform regions (the dark basemap
  * paints a flat `#0c0c0c` background and `rgb(27,27,29)` water), and the observed
  * uncomposited colour `#2b2b2b` also occurs 609 times in a *good* dark capture
@@ -599,7 +632,7 @@ async function contradictedMapCells(
     // retry instead of silently skipping validation.
     const canvasShot = await canvasLocator.screenshot();
 
-    const pageUrl = `data:image/png;base64,${shot.toString("base64")}`;
+    const pageUrl = `data:${SCREENSHOT_MIME};base64,${shot.toString("base64")}`;
     const canvasUrl = `data:image/png;base64,${canvasShot.toString("base64")}`;
 
     return page.evaluate(
@@ -640,8 +673,53 @@ async function contradictedMapCells(
                 return null;
             }
 
+            const mapRect = mapElement.getBoundingClientRect();
+            const canvasRect = canvasElement.getBoundingClientRect();
+
+            // Image pixels per CSS pixel for each capture.
+            const pageScaleX = pageImage.width / window.innerWidth;
+            const pageScaleY = pageImage.height / window.innerHeight;
+            const canvasScaleX = canvasImage.width / Math.max(1, canvasRect.width);
+            const canvasScaleY = canvasImage.height / Math.max(1, canvasRect.height);
+
             // If the canvas capture is itself blank it cannot be trusted as
             // ground truth; throwing makes the caller retry the whole capture.
+            // Overlays painted above the canvas leak into the element capture,
+            // so their live bounding boxes are rasterised into a mask first
+            // (same selector and padding as `captureCanvasLuminance`); otherwise
+            // a flat canvas covered by overlays would score enough colours to
+            // pass this guard.
+            const overlayMask = document.createElement("canvas");
+            overlayMask.width = canvasImage.width;
+            overlayMask.height = canvasImage.height;
+            const overlayMaskContext = overlayMask.getContext("2d");
+            if (!overlayMaskContext) {
+                return null;
+            }
+            overlayMaskContext.fillStyle = "#000";
+            const maskPad = 2;
+            for (const overlay of Array.from(
+                document.querySelectorAll(
+                    "#maplibre-map > :not(.maplibregl-canvas-container), #maplibre-map .maplibregl-ctrl",
+                ),
+            ).map((element) => element.getBoundingClientRect())) {
+                if (overlay.width <= 0 || overlay.height <= 0) {
+                    continue;
+                }
+                overlayMaskContext.fillRect(
+                    (overlay.left - canvasRect.left - maskPad) * canvasScaleX,
+                    (overlay.top - canvasRect.top - maskPad) * canvasScaleY,
+                    (overlay.width + 2 * maskPad) * canvasScaleX,
+                    (overlay.height + 2 * maskPad) * canvasScaleY,
+                );
+            }
+            const overlayMaskData = overlayMaskContext.getImageData(
+                0,
+                0,
+                overlayMask.width,
+                overlayMask.height,
+            ).data;
+
             const canvasColours = new Set<number>();
             const canvasData = canvasContext.getImageData(
                 0,
@@ -650,6 +728,9 @@ async function contradictedMapCells(
                 canvasImage.height,
             ).data;
             for (let i = 0; i < canvasData.length; i += 4) {
+                if (overlayMaskData[i + 3] !== 0) {
+                    continue;
+                }
                 canvasColours.add(
                     (canvasData[i] << 16) | (canvasData[i + 1] << 8) | canvasData[i + 2],
                 );
@@ -660,16 +741,7 @@ async function contradictedMapCells(
                 );
             }
 
-            const mapRect = mapElement.getBoundingClientRect();
-            const canvasRect = canvasElement.getBoundingClientRect();
-
-            // Image pixels per CSS pixel for each capture.
-            const pageScaleX = pageImage.width / window.innerWidth;
-            const pageScaleY = pageImage.height / window.innerHeight;
-            const canvasScaleX = canvasImage.width / Math.max(1, canvasRect.width);
-            const canvasScaleY = canvasImage.height / Math.max(1, canvasRect.height);
-
-            // Same overlay-free band `capturedMapColourCount` samples.
+            // Grid area the cell cross-check samples.
             const band = {
                 x: mapRect.x + 8,
                 y: mapRect.y + 120,
@@ -795,26 +867,6 @@ async function contradictedMapCells(
 }
 
 /**
- * Recovery trigger for a blank capture: resize the viewport by one pixel and
- * restore it. MapLibre 6 watches its container with a `ResizeObserver`, so
- * this runs `map.resize()` + a redraw, forcing a fresh composited frame. A
- * synthetic `window` `resize` event does nothing (MapLibre 6 no longer listens
- * for it), and double `requestAnimationFrame` alone was the weakest measured
- * recovery (2 of 9 blanks were still blank after three fast attempts).
- */
-async function nudgeMapRepaint(page: Page) {
-    const viewport = page.viewportSize();
-    if (!viewport) {
-        return;
-    }
-
-    await page.setViewportSize({ width: viewport.width + 1, height: viewport.height + 1 });
-    await page.waitForTimeout(150);
-    await page.setViewportSize(viewport);
-    await page.waitForTimeout(150);
-}
-
-/**
  * Captures a screenshot and writes it to `path` only once the captured bytes
  * prove the map actually painted. Gated on map-tile readiness (see
  * `waitForMapTilesReady`) and validated per attempt:
@@ -827,11 +879,11 @@ async function nudgeMapRepaint(page: Page) {
  *   screenshot with blank or *partially* composited map pixels (a
  *   compositor/readback race under GPU load; observed as "GPU stall due to
  *   ReadPixels" warnings, and once as a half-uniform capture). Neither is ever
- *   written. Each attempt decodes its own PNG buffer, counts real painted
+ *   written. Each attempt decodes its own JPEG buffer, counts real painted
  *   colours in the map region, and cross-checks that region against the live
- *   canvas cell by cell (`contradictedMapCells`); a failing capture triggers a
- *   `nudgeMapRepaint` so MapLibre redraws, re-runs `waitForMapTilesReady`,
- *   then waits the same bounded backoff (400ms, then 800ms) before retrying.
+ *   canvas cell by cell (`contradictedMapCells`); a failing capture re-runs
+ *   `waitForMapTilesReady` — which forces a fresh MapLibre frame — then waits
+ *   the same bounded backoff (400ms, then 800ms) before retrying.
  *
  * Writing the file only after validation means a failure can never leave a
  * blank or partial asset behind. If every attempt fails the function throws
@@ -849,13 +901,16 @@ export async function captureScreenshot(page: Page, path: string): Promise<Buffe
 
     for (let attempt = 1; attempt <= backoffMs.length + 1; attempt += 1) {
         if (attempt > 1) {
-            await nudgeMapRepaint(page);
+            // The idle-gated wait forces a fresh MapLibre frame itself.
             await waitForMapTilesReady(page);
             await new Promise((resolve) => setTimeout(resolve, backoffMs[attempt - 2]));
         }
 
         try {
-            const shot = await page.screenshot();
+            const shot = await page.screenshot({
+                type: "jpeg",
+                quality: SCREENSHOT_QUALITY,
+            });
             const colourCount = await capturedMapColourCount(page, shot);
             if (typeof colourCount === "number") {
                 lastColourCount = colourCount;

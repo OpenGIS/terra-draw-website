@@ -8,8 +8,8 @@ The UI and map basemap follow the browser/OS light/dark preference automatically
 
 |          | Light | Dark |
 | -------- | ----- | ---- |
-| **Home** | ![Home screen in light mode: the map demo with the default Info tab and no features drawn](tests/e2e/documentation/screenshots/home-light.png) | ![Home screen in dark mode: the same default map demo on the dark basemap](tests/e2e/documentation/screenshots/home-dark.png) |
-| **Demo** | ![Demo in light mode: a route line loaded from GeoJSON spanning Nova Scotia and Newfoundland, listed in the Info panel](tests/e2e/documentation/screenshots/demo-light.png) | ![Demo in dark mode: the same route line on the dark basemap](tests/e2e/documentation/screenshots/demo-dark.png) |
+| **Home** | ![Home screen in light mode: the map demo with the default Info tab and no features drawn](screenshots/docs/home-light.jpg) | ![Home screen in dark mode: the same default map demo on the dark basemap](screenshots/docs/home-dark.jpg) |
+| **Demo** | ![Demo in light mode: a route line loaded from GeoJSON spanning Nova Scotia and Newfoundland, listed in the Info panel](screenshots/docs/demo-light.jpg) | ![Demo in dark mode: the same route line on the dark basemap](screenshots/docs/demo-dark.jpg) |
 
 *The demo row shows the app loaded with a real multi-day route: one GeoJSON LineString spanning Atlantic Canada, listed in the Info panel.*
 
@@ -48,7 +48,7 @@ See [`documentation/5.testing.md`](documentation/5.testing.md) for the full test
 | ------------------- | ------------------------------------------------------------ |
 | `npm run dev`       | Start the Vite dev server at `http://localhost:5173`         |
 | `npm run typecheck` | Type-check with `tsc --noEmit`                               |
-| `npm run build`     | Build the static site into `docs/` and write `docs/CNAME`    |
+| `npm run build`     | Build the static site into `docs/`                           |
 | `npm run lint`      | Lint `src/` with ESLint                                      |
 | `npm test`          | Run the Playwright test suite (builds and previews the site) |
 

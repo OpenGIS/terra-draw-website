@@ -7,6 +7,7 @@ import {
     mapCanvasLuminance,
     relativeLuminance,
     waitForMapTilesReady,
+    SCREENSHOT_MIME,
 } from "./fixtures";
 import type { Page } from "@playwright/test";
 
@@ -26,7 +27,7 @@ import type { Page } from "@playwright/test";
  *   changes, with drawing still working after the swap.
  * - Dark evidence for the API docs route lands in .opencode/tmp/dark-mode/
  *   (gitignored); the committed documentation captures live in
- *   tests/e2e/documentation/. All captures are attached to the Playwright
+ *   screenshots/docs/. All captures are attached to the Playwright
  *   report.
  *
  * All tests pass against the shipped build; nothing here is skipped or
@@ -379,11 +380,11 @@ test.describe("dark colour scheme", () => {
 
         const screenshot = await captureScreenshot(
             page,
-            `${DARK_EVIDENCE_DIR}/api-docs-dark.png`,
+            `${DARK_EVIDENCE_DIR}/api-docs-dark.jpg`,
         );
         await testInfo.attach("dark-api-docs", {
             body: screenshot,
-            contentType: "image/png",
+            contentType: SCREENSHOT_MIME,
         });
     });
 });
