@@ -41,12 +41,12 @@ const LIGHT_BACKGROUND = "rgb(250, 250, 250)";
 const LIGHT_HEADER_BACKGROUND = "rgb(253, 253, 253)";
 const LIGHT_TEXT = "rgb(68, 68, 68)";
 
-// Any Protomaps style JSON, used to observe which basemap variant loads.
-const PROTOMAPS_STYLE_REQUEST = /styles\/v3\/[a-z-]+\.json/;
-// The dark style is Protomaps `styles/v3/black.json`, the counterpart of
-// white.json; the (black|dark) matcher stays resilient to a rename.
-const DARK_BASEMAP_STYLE_REQUEST = /styles\/v3\/(black|dark)\.json/;
-const LIGHT_BASEMAP_STYLE_REQUEST = /styles\/v3\/white\.json/;
+// Any basemap style request, used to observe which variant loads. The light
+// style is OpenFreeMap's `styles/positron` and the dark style is OpenFreeMap's
+// `styles/dark` (both served without a file extension).
+const BASEMAP_STYLE_REQUEST = /\/styles\/positron|\/styles\/dark/;
+const DARK_BASEMAP_STYLE_REQUEST = /\/styles\/dark/;
+const LIGHT_BASEMAP_STYLE_REQUEST = /\/styles\/positron/;
 
 const DARK_EVIDENCE_DIR = ".opencode/tmp/dark-mode";
 
@@ -68,18 +68,19 @@ const DARK_CANVAS_LUMINANCE_CEILING = 0.2;
 const LIGHT_CANVAS_LUMINANCE_FLOOR = 0.5;
 
 // Map-overlay chrome contrast gates (WCAG 2.1 non-text contrast). The toolbar
-// sits on the map, not the page, so its baseline is Protomaps' black basemap
-// rather than the page background. The strongest edge must clear 3:1 and the
-// weaker of surface/border must still clear 1.5:1; the label must stay legible
-// on its own surface. The reference is the earth fill `#141414` (see
+// sits on the map, not the page, so its baseline is the dark basemap rather
+// than the page background. The strongest edge must clear 3:1 and the weaker
+// of surface/border must still clear 1.5:1; the label must stay legible on its
+// own surface. The reference is the dark style's background `#0c0c0c` (see
 // `DARK_BASEMAP_EARTH`), the near-black the reported bug was measured against.
 const MINIMUM_BASEMAP_BOUNDARY_CONTRAST = 3;
 const MINIMUM_BASEMAP_SURFACE_CONTRAST = 1.5;
 const MINIMUM_LABEL_CONTRAST = 4.5;
 
-// Protomaps' black basemap earth fill — the near-black the reported bug was
-// measured against, and therefore the contract's reference basemap.
-const DARK_BASEMAP_EARTH = "#141414";
+// OpenFreeMap's dark-style background fill (`rgb(12,12,12)`) — the near-black
+// the reported bug was measured against, and therefore the contract's reference
+// basemap.
+const DARK_BASEMAP_EARTH = "#0c0c0c";
 const DARK_BASEMAP_EARTH_LUMINANCE = hexLuminance(DARK_BASEMAP_EARTH);
 
 type StoredFeature = {
@@ -88,14 +89,14 @@ type StoredFeature = {
 };
 
 /**
- * Records every Protomaps style request from before navigation, so initial
+ * Records every basemap style request from before navigation, so initial
  * loads are caught, and exposes a per-pattern count for polling.
  */
 function collectStyleRequests(page: Page) {
     const styleUrls: string[] = [];
 
     page.on("request", (request) => {
-        if (PROTOMAPS_STYLE_REQUEST.test(request.url())) {
+        if (BASEMAP_STYLE_REQUEST.test(request.url())) {
             styleUrls.push(request.url());
         }
     });
@@ -321,8 +322,8 @@ test.describe("dark colour scheme", () => {
         // measuring the chrome; a transient blank canvas readback would
         // otherwise be mistaken for a light map.
         //
-        // The live band at the default camera is water (`#333333`), not the
-        // near-black earth fill (`#141414`) the reported bug and the acceptance
+        // The live band at the default camera is water (`rgb(27,27,29)`), not
+        // the near-black background (`#0c0c0c`) the reported bug and the acceptance
         // rule are defined against, so the assertion uses the documented earth
         // reference. Requiring 3:1 against water instead would demand chrome
         // bright enough to trip the unrelated `mapCanvasLuminance` readiness

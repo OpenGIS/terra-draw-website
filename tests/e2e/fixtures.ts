@@ -12,7 +12,7 @@ import { test as base, expect, type Page } from "@playwright/test";
  *   fails the test during teardown when any were seen. Console warnings are
  *   logged but never fail a test. The teardown error reports the current page
  *   URL and every collected message, one per line.
- * - `mapTileTracker` records successfully finished Protomaps tile requests per
+ * - `mapTileTracker` records successfully finished OpenFreeMap tile requests per
  *   page from before navigation, so `captureScreenshot` can gate on real map
  *   rendering.
  */
@@ -43,7 +43,8 @@ export const test = base.extend<{
             mapTileUrlsByPage.set(page, tileUrls);
 
             // `requestfinished` (not `response`) so the tile body is fully
-            // downloaded; the app's only tile host is Protomaps.
+            // downloaded; all of the app's style, sprite, font and tile hosts
+            // are OpenFreeMap.
             page.on("requestfinished", (request) => {
                 if (isMapTileUrl(request.url())) {
                     tileUrls.push(request.url());
@@ -87,9 +88,25 @@ export const test = base.extend<{
 
 const mapTileUrlsByPage = new WeakMap<Page, string[]>();
 
-/** Protomaps vector tiles, e.g. https://api.protomaps.com/tiles/v3/3/1/2.mvt?key=... */
+/**
+ * OpenFreeMap basemap tile URLs:
+ * - vector: https://tiles.openfreemap.org/planet/<version>/{z}/{x}/{y}.pbf
+ *   The source is the TileJSON at /planet, which resolves to a versioned tile
+ *   path (e.g. /planet/20260927_080001_pt/3/4/3.pbf), so the version segment is
+ *   optional here.
+ * - raster: https://tiles.openfreemap.org/natural_earth/<layer>/{z}/{x}/{y}.png
+ *
+ * Glyph ranges (`/fonts/.../{range}.pbf`), sprites and style/source JSON are
+ * deliberately excluded.
+ */
 function isMapTileUrl(url: string) {
-    return url.includes("protomaps.com") && /\/tiles\/v\d+\/\d+\/\d+\/\d+\.mvt/.test(url);
+    if (!url.startsWith("https://tiles.openfreemap.org/")) {
+        return false;
+    }
+    return (
+        /\/planet\/(?:[^/]+\/)?\d+\/\d+\/\d+\.pbf/.test(url) ||
+        /\/natural_earth\/[^/]+\/\d+\/\d+\/\d+\.png/.test(url)
+    );
 }
 
 /** Live list of finished map-tile requests for a tracked page (oldest first). */
@@ -183,11 +200,8 @@ export async function expectDarkChrome(page: Page) {
 }
 
 /**
- * Mean relative luminance (0 = black, 1 = white) of the live map canvas, i.e.
- * the basemap only. Unlike a style-request count this only passes once the new
- * basemap has actually painted, so drawing that follows happens against the
- * swapped style. Returns NaN on a transient capture failure, which fails either
- * comparison so the poll keeps retrying.
+ * One luminance capture of the live map canvas, taken exactly as rendered.
+ * Callers that need a visually settled value must use `mapCanvasLuminance`.
  *
  * A screenshot of the `.maplibregl-canvas` element reads the composited page
  * clipped to the canvas box, so DOM overlays painted above it (the drawing
@@ -198,7 +212,7 @@ export async function expectDarkChrome(page: Page) {
  * container, plus its `.maplibregl-ctrl` controls), so the result derives from
  * basemap pixels only and no overlay can contribute.
  */
-export async function mapCanvasLuminance(page: Page): Promise<number> {
+async function captureCanvasLuminance(page: Page): Promise<number> {
     try {
         const shot = await page.locator(".maplibregl-canvas").screenshot();
         const dataUrl = `data:image/png;base64,${shot.toString("base64")}`;
@@ -278,6 +292,60 @@ export async function mapCanvasLuminance(page: Page): Promise<number> {
     } catch {
         return Number.NaN;
     }
+}
+
+// A capture counts as visually settled once consecutive frames differ by no
+// more than this mean-luminance delta. An in-progress basemap label/line fade
+// moves the mean roughly an order of magnitude more per capture, so the
+// threshold is wide enough to ignore rasterisation noise yet narrow enough to
+// wait a fade out. Two consecutive small deltas are required so a momentary
+// plateau mid-load cannot be mistaken for the final frame.
+const LUMINANCE_STABLE_DELTA = 0.002;
+const LUMINANCE_STABLE_STEPS = 2;
+
+// Bound on settling: a genuinely stuck map still returns its last capture for
+// the caller's own readiness poll to reject, rather than hanging.
+const LUMINANCE_SETTLE_TIMEOUT = 6_000;
+
+/**
+ * Mean relative luminance (0 = black, 1 = white) of the live map canvas, i.e.
+ * the basemap only. Unlike a style-request count this only passes once the new
+ * basemap has actually painted, so drawing that follows happens against the
+ * swapped style. Returns NaN on a transient capture failure, which fails either
+ * comparison so the poll keeps retrying.
+ *
+ * A freshly committed style is not visually static the moment its tiles finish
+ * downloading: MapLibre fades the new labels and lines in over the following
+ * frames, moving the mean luminance. Sampling that moving target made two
+ * windows a few hundred milliseconds apart disagree by ~0.015 even with no
+ * overlay present (fixture-self-test). The value is therefore only returned
+ * once `LUMINANCE_STABLE_STEPS` consecutive captures agree to within
+ * `LUMINANCE_STABLE_DELTA`, so a caller comparing two samples compares settled
+ * frames rather than a fade in progress.
+ */
+export async function mapCanvasLuminance(page: Page): Promise<number> {
+    const deadline = Date.now() + LUMINANCE_SETTLE_TIMEOUT;
+    let previous = await captureCanvasLuminance(page);
+    let stableSteps = 0;
+
+    while (Date.now() < deadline) {
+        const current = await captureCanvasLuminance(page);
+        if (
+            Number.isFinite(previous) &&
+            Number.isFinite(current) &&
+            Math.abs(current - previous) <= LUMINANCE_STABLE_DELTA
+        ) {
+            stableSteps += 1;
+            if (stableSteps >= LUMINANCE_STABLE_STEPS) {
+                return current;
+            }
+        } else {
+            stableSteps = 0;
+        }
+        previous = current;
+    }
+
+    return previous;
 }
 
 /**
@@ -496,8 +564,8 @@ async function capturedMapColourCount(page: Page, shot: Buffer): Promise<number 
  * scores hundreds of colours from its painted half).
  *
  * Why the live canvas, not the PNG alone: a fully composited dark capture
- * legitimately contains large, exactly uniform regions (Protomaps' `black`
- * basemap paints flat `#141414` land and `#333333` water), and the observed
+ * legitimately contains large, exactly uniform regions (the dark basemap
+ * paints a flat `#0c0c0c` background and `rgb(27,27,29)` water), and the observed
  * uncomposited colour `#2b2b2b` also occurs 609 times in a *good* dark capture
  * — so "is this colour a map colour?" and "does this colour appear elsewhere?"
  * cannot separate a defect from flat geography. The canvas, by contrast, is

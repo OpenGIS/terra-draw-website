@@ -136,7 +136,7 @@ test("regenerates the light and dark demo captures from the big route data", asy
     // tiles for the final camera's zoom level have actually arrived.
     const finalZoomTiles = () =>
         tileResponses.filter((url) =>
-            new RegExp(`/tiles/v3/${FINAL_TILE_ZOOM}/\\d+/\\d+\\.mvt`).test(url),
+            new RegExp(`/planet/(?:[^/]+/)?${FINAL_TILE_ZOOM}/\\d+/\\d+\\.pbf`).test(url),
         ).length;
     await expect.poll(finalZoomTiles, { timeout: 20_000 }).toBeGreaterThanOrEqual(3);
 
@@ -170,7 +170,7 @@ test("regenerates the light and dark demo captures from the big route data", asy
     });
 
     // Emulating the dark scheme fires the app's matchMedia change listener,
-    // which swaps the basemap to black.json with { transformStyle:
+    // which swaps the basemap to the dark style with { transformStyle:
     // preserveTerraDrawLayers }, keeping the seeded route layer on top.
     await page.emulateMedia({ colorScheme: "dark" });
 

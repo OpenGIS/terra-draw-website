@@ -62,10 +62,8 @@ export function setupMaplibreMap({
     );
   }
 
-  const PROTOMAPS_API_KEY = "d23c43b7c56e123d";
-  const LIGHT_STYLE = `https://api.protomaps.com/styles/v3/white.json?key=${PROTOMAPS_API_KEY}`;
-  // Black is the near-black counterpart to white (earth fill #141414).
-  const DARK_STYLE = `https://api.protomaps.com/styles/v3/black.json?key=${PROTOMAPS_API_KEY}`;
+  const LIGHT_STYLE = "https://tiles.openfreemap.org/styles/positron";
+  const DARK_STYLE = "https://tiles.openfreemap.org/styles/dark";
 
   const colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
   const preferredStyle = () => (colorScheme.matches ? DARK_STYLE : LIGHT_STYLE);
